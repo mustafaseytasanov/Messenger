@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.1.xsd">
+    <changeSet id="create-chats-users-table" author="mustafa">
+        <createTable tableName="chats_users">
+            <column name="chat_id" type="bigserial">
+                <constraints nullable="false"
+                             referencedTableName="chat"
+                             referencedColumnNames="id"
+                             foreignKeyName="fk_chat_user_chat"/>
+            </column>
+            <column name="user_id" type="bigserial">
+                <constraints nullable="false"
+                             referencedTableName="user"
+                             referencedColumnNames="id"
+                             foreignKeyName="fk_chat_user_user"/>
+            </column>
+        </createTable>
+
+        <addPrimaryKey tableName="chats_users" columnNames="chat_id, user_id"/>
+    </changeSet>
+
+</databaseChangeLog>
