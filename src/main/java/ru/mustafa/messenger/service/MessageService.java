@@ -36,18 +36,24 @@ public class MessageService {
      * @param messageDTO the data container for the new message
      * @return the unique identifier of the saved message
      * @throws EntityNotFoundException if the specified chat room does not exist
+     * @throws RuntimeException if user is not a participant of the chat
      */
     @Transactional
     public long createMessage(MessageDTO messageDTO) {
-        Message message = new Message();
-        long chatId = messageDTO.chatId();
-        Optional<Chat> optionalChat = chatRepository.findById(chatId);
-        if (optionalChat.isEmpty()) {
-            throw new RuntimeException("Chat not found");
+
+        Chat chat = chatRepository.findById(messageDTO.chatId())
+                .orElseThrow(() ->
+                        new EntityNotFoundException("Chat not found with id: "
+                                + messageDTO.chatId()));
+
+        User currentUser = userService.getCurrentUser();
+        if (!chat.getUsers().contains(currentUser)) {
+            throw new RuntimeException("You're not a participant of this chat");
         }
-        Chat chat = optionalChat.get();
+
+        Message message = new Message();
         message.setChat(chat);
-        message.setAuthor(userService.getCurrentUser());
+        message.setAuthor(currentUser);
         message.setText(messageDTO.text());
         message.setCreatedAt(LocalDateTime.now());
         message = messageRepository.save(message);
@@ -71,9 +77,9 @@ public class MessageService {
         if (!chat.getUsers().contains(user)) {
             throw new RuntimeException("Chat doesn't contain current user");
         }
-        Set<Message> chatMessages = chat.getMessages();
+        List<Message> chatMessages = messageRepository
+                .findByChatIdOrderByCreatedAtAsc(chatId);
         return chatMessages.stream()
-                .sorted(Comparator.comparing(Message::getCreatedAt))
                 .map(msg -> new ChatMessagesDTO(
                         msg.getAuthor().getUsername(),
                         msg.getText(),

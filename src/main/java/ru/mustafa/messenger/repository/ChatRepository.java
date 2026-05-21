@@ -1,9 +1,13 @@
 package ru.mustafa.messenger.repository;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.mustafa.messenger.model.Chat;
 import ru.mustafa.messenger.model.User;
+
+import java.util.List;
 
 /**
  * Repository interface for managing {@link Chat} entities.
@@ -13,4 +17,6 @@ import ru.mustafa.messenger.model.User;
  */
 @Repository
 public interface ChatRepository extends JpaRepository<Chat, Long> {
+    @EntityGraph(attributePaths = {"messages"})
+    List<Chat> findByUsersId(@Param("userId") Long userId);
 }

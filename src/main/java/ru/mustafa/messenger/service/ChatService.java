@@ -40,15 +40,13 @@ public class ChatService {
 
         Chat chat = new Chat();
         chat.setName(chatDTO.name());
-        Set<User> users = new HashSet<>();
-        Optional<User> optionalUser;
-        for (long chatId: chatDTO.users()) {
-            optionalUser = userRepository.findById(chatId);
-            if (optionalUser.isEmpty()) {
-                throw new RuntimeException("User not found.");
-            }
-            users.add(optionalUser.get());
+
+        List<User> foundUsers = userRepository.findAllById(chatDTO.users());
+        if (foundUsers.size() != chatDTO.users().size()) {
+            throw new RuntimeException("One or more users not found.");
         }
+        Set<User> users = new HashSet<>(foundUsers);
+
         users.add(userService.getCurrentUser());
         chat.setUsers(users);
         chat.setCreatedAt(LocalDateTime.now());
@@ -65,7 +63,7 @@ public class ChatService {
     @Transactional(readOnly = true)
     public List<UserChatsDTO> getUserChats() {
         User user = userService.getCurrentUser();
-        Set<Chat> userChats = user.getChats();
+        List<Chat> userChats = chatRepository.findByUsersId(user.getId());
         Map<Chat, LocalDateTime> chatAndLatestMessageMap = new HashMap<>();
         for (Chat chat: userChats) {
             Set<Message> messages = chat.getMessages();
