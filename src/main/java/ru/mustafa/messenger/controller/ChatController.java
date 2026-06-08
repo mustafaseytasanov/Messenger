@@ -8,10 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.mustafa.messenger.dto.ChatDTO;
 import ru.mustafa.messenger.dto.UserChatsDTO;
-import ru.mustafa.messenger.model.Chat;
 import ru.mustafa.messenger.service.ChatService;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 
 /**

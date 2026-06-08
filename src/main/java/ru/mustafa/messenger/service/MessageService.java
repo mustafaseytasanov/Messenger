@@ -6,6 +6,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.mustafa.messenger.dto.ChatMessagesDTO;
 import ru.mustafa.messenger.dto.MessageDTO;
+import ru.mustafa.messenger.exception.ChatAccessDeniedException;
+import ru.mustafa.messenger.exception.ResourceNotFoundException;
 import ru.mustafa.messenger.model.Chat;
 import ru.mustafa.messenger.model.Message;
 import ru.mustafa.messenger.model.User;
@@ -20,7 +22,7 @@ import java.util.stream.Collectors;
  * Service responsible for creating new chat messages and retrieving message history.
  *
  * @author Mustafa
- * @version 1.0.
+ * @version 1.1
  */
 @Service
 @RequiredArgsConstructor
@@ -35,20 +37,22 @@ public class MessageService {
      *
      * @param messageDTO the data container for the new message
      * @return the unique identifier of the saved message
-     * @throws EntityNotFoundException if the specified chat room does not exist
-     * @throws RuntimeException if user is not a participant of the chat
+     * @throws ResourceNotFoundException if the specified chat room does not exist
+     * @throws ChatAccessDeniedException if user is not a participant of the chat
      */
     @Transactional
     public long createMessage(MessageDTO messageDTO) {
 
         Chat chat = chatRepository.findById(messageDTO.chatId())
                 .orElseThrow(() ->
-                        new EntityNotFoundException("Chat not found with id: "
+                        new ResourceNotFoundException("Chat not found with id: "
                                 + messageDTO.chatId()));
 
         User currentUser = userService.getCurrentUser();
-        if (!chat.getUsers().contains(currentUser)) {
-            throw new RuntimeException("You're not a participant of this chat");
+        boolean isParticipant = chatRepository.isUserParticipant(chat.getId(),
+                currentUser.getId());
+        if (!isParticipant) {
+            throw new ChatAccessDeniedException("You're not a participant of this chat");
         }
 
         Message message = new Message();
@@ -65,18 +69,22 @@ public class MessageService {
      *
      * @param chatId the unique identifier of the chat room
      * @return a chronologically sorted list of chat messages converted to data transfer objects
-     * @throws EntityNotFoundException if the chat room does not exist
-     * @throws RuntimeException        if the current authenticated user is not a participant of the chat
+     * @throws ResourceNotFoundException if the chat room does not exist
+     * @throws ChatAccessDeniedException        if the current authenticated user is not a participant of the chat
      */
     @Transactional(readOnly = true)
     public List<ChatMessagesDTO> getChatMessages(long chatId) {
         Chat chat = chatRepository.findById(chatId)
-                .orElseThrow(() -> new EntityNotFoundException
+                .orElseThrow(() -> new ResourceNotFoundException
                         ("Chat not found with id: " + chatId));
+
         User user = userService.getCurrentUser();
-        if (!chat.getUsers().contains(user)) {
-            throw new RuntimeException("Chat doesn't contain current user");
+        boolean isParticipant = chatRepository.isUserParticipant(chatId,
+                user.getId());
+        if (!isParticipant) {
+            throw new ChatAccessDeniedException("You're not a participant of this chat");
         }
+
         List<Message> chatMessages = messageRepository
                 .findByChatIdOrderByCreatedAtAsc(chatId);
         return chatMessages.stream()

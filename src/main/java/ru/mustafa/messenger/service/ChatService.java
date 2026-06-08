@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.mustafa.messenger.dto.ChatDTO;
 import ru.mustafa.messenger.dto.UserChatsDTO;
+import ru.mustafa.messenger.exception.ResourceNotFoundException;
 import ru.mustafa.messenger.model.Chat;
 import ru.mustafa.messenger.model.Message;
 import ru.mustafa.messenger.model.User;
@@ -13,12 +14,13 @@ import ru.mustafa.messenger.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Service for managing user chats and chat creation logic.
  *
  * @author Mustafa
- * @version 1.0.
+ * @version 1.2
  */
 @Service
 @RequiredArgsConstructor
@@ -33,7 +35,7 @@ public class ChatService {
      *
      * @param chatDTO the data container with chat name and participant IDs
      * @return the unique identifier of the newly created chat
-     * @throws RuntimeException if any of the provided user IDs are not found
+     * @throws ResourceNotFoundException if any of the provided user IDs are not found
      */
     @Transactional
     public long createChat(ChatDTO chatDTO) {
@@ -41,9 +43,16 @@ public class ChatService {
         Chat chat = new Chat();
         chat.setName(chatDTO.name());
 
-        List<User> foundUsers = userRepository.findAllById(chatDTO.users());
-        if (foundUsers.size() != chatDTO.users().size()) {
-            throw new RuntimeException("One or more users not found.");
+        // Removing duplicates
+        Set<Long> requestedIds = new HashSet<>(chatDTO.users());
+        List<User> foundUsers = userRepository.findAllById(requestedIds);
+
+        if (foundUsers.size() != requestedIds.size()) {
+            Set<Long> foundIds = foundUsers.stream()
+                    .map(User::getId)
+                    .collect(Collectors.toSet());
+            requestedIds.removeAll(foundIds);
+            throw new ResourceNotFoundException("Users not found with IDs: " + requestedIds);
         }
         Set<User> users = new HashSet<>(foundUsers);
 

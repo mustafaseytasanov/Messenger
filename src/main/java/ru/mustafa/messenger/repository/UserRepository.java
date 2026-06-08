@@ -10,7 +10,7 @@ import java.util.Optional;
  * Repository interface for managing {@link User} entities.
  *
  * @author Mustafa
- * @version 1.0.
+ * @version 1.0
  */
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
