@@ -4,11 +4,15 @@ package ru.mustafa.messenger.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import ru.mustafa.messenger.dto.ChatMessagesDTO;
 import ru.mustafa.messenger.dto.MessageDTO;
+import ru.mustafa.messenger.dto.SavedMessageDTO;
 import ru.mustafa.messenger.service.MessageService;
 
 import java.util.List;
@@ -17,7 +21,7 @@ import java.util.List;
  * Class MessageController.
  *
  * @author Mustafa
- * @version 1.0
+ * @version 1.1
  */
 @RestController
 @RequestMapping("/messages")
@@ -66,6 +70,16 @@ public class MessageController {
                 .getChatMessages(chatId);
         return ResponseEntity.status(HttpStatus.OK)
                 .body("Chat messages ascending: " + sortedChatMessages);
+    }
 
+
+    @GetMapping("/get/saved")
+    public ResponseEntity<Page<SavedMessageDTO>> getSavedMessages(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        Page<SavedMessageDTO> messagesPage = messageService
+                .getSavedMessagesHistory(page, size);
+        return ResponseEntity.ok(messagesPage);
     }
 }

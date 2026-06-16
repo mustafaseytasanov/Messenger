@@ -2,10 +2,15 @@ package ru.mustafa.messenger.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.mustafa.messenger.dto.ChatMessagesDTO;
 import ru.mustafa.messenger.dto.MessageDTO;
+import ru.mustafa.messenger.dto.SavedMessageDTO;
 import ru.mustafa.messenger.exception.ChatAccessDeniedException;
 import ru.mustafa.messenger.exception.ResourceNotFoundException;
 import ru.mustafa.messenger.model.Chat;
@@ -94,5 +99,27 @@ public class MessageService {
                         msg.getCreatedAt()
                 ))
                 .collect(Collectors.toList());
+    }
+
+    // First approach of pagination.
+    public Page<SavedMessageDTO> getSavedMessagesHistory(int page, int size) {
+
+        String username = userService.getCurrentUser().getUsername();
+        String chatName = "saved_" + username;
+
+        Chat savedChat = chatRepository.findByName(chatName)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Чат Избранное не найден для пользователя: "
+                                + username));
+
+        Pageable pageable = PageRequest.of(page, size,
+                Sort.by("createdAt").descending());
+
+        // 4. Запрашиваем страницу сообщений и маппим в DTO
+        return messageRepository.findByChatId(savedChat.getId(), pageable)
+                .map(msg -> new SavedMessageDTO(
+                        msg.getText(),
+                        msg.getCreatedAt()
+                ));
     }
 }

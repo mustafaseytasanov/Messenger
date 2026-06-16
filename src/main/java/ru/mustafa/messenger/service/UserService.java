@@ -1,11 +1,13 @@
 package ru.mustafa.messenger.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.mustafa.messenger.dto.UserRegisteredEvent;
 import ru.mustafa.messenger.model.User;
 import ru.mustafa.messenger.model.Role;
 import ru.mustafa.messenger.repository.UserRepository;
@@ -14,12 +16,13 @@ import ru.mustafa.messenger.repository.UserRepository;
  * Service for managing user accounts, profiles, and Spring Security user details retrieval.
  *
  * @author Mustafa
- * @version 1.0.
+ * @version 1.1
  */
 @Service
 @RequiredArgsConstructor
 public class UserService {
     private final UserRepository repository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Saves a user entity directly to the database.
@@ -50,7 +53,12 @@ public class UserService {
             throw new RuntimeException("Пользователь с таким email уже существует");
         }
 
-        return save(user);
+        User savedUser = save(user);
+
+        eventPublisher.publishEvent(new UserRegisteredEvent(
+                savedUser.getId(), savedUser.getUsername()));
+
+        return savedUser;
     }
 
     /**

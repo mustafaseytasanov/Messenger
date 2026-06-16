@@ -9,6 +9,7 @@ import ru.mustafa.messenger.model.Chat;
 import ru.mustafa.messenger.model.User;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Repository interface for managing {@link Chat} entities.
@@ -25,4 +26,6 @@ public interface ChatRepository extends JpaRepository<Chat, Long> {
             "WHERE c.id = :chatId AND u.id = :userId")
     boolean isUserParticipant(@Param("chatId") Long chatId,
                               @Param("userId") Long userId);
+
+    Optional<Chat> findByName(String name);
 }

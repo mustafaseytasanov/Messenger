@@ -2,6 +2,7 @@ package ru.mustafa.messenger.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.mustafa.messenger.dto.ChatDTO;
 import ru.mustafa.messenger.dto.UserChatsDTO;
@@ -52,7 +53,8 @@ public class ChatService {
                     .map(User::getId)
                     .collect(Collectors.toSet());
             requestedIds.removeAll(foundIds);
-            throw new ResourceNotFoundException("Users not found with IDs: " + requestedIds);
+            throw new ResourceNotFoundException("Users not found with IDs: "
+                    + requestedIds);
         }
         Set<User> users = new HashSet<>(foundUsers);
 
@@ -61,6 +63,19 @@ public class ChatService {
         chat.setCreatedAt(LocalDateTime.now());
         chat = chatRepository.save(chat);
         return chat.getId();
+    }
+
+    // Creating chat for saved messages
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createSavedChat(String chatName, Long ownerId) {
+        Chat chat = new Chat();
+        chat.setName(chatName);
+        chat.setCreatedAt(LocalDateTime.now());
+        User user = userRepository.getReferenceById(ownerId);
+        Set<User> users = new HashSet<>();
+        users.add(user);
+        chat.setUsers(users);
+        chatRepository.save(chat);
     }
 
     /**
