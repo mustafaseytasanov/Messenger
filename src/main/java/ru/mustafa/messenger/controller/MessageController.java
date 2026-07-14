@@ -5,6 +5,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
+import org.springframework.data.web.PagedResourcesAssembler;
+import org.springframework.hateoas.CollectionModel;
+import org.springframework.hateoas.EntityModel;
+import org.springframework.hateoas.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -14,8 +18,13 @@ import ru.mustafa.messenger.dto.ChatMessagesDTO;
 import ru.mustafa.messenger.dto.MessageDTO;
 import ru.mustafa.messenger.dto.SavedMessageDTO;
 import ru.mustafa.messenger.service.MessageService;
+import ru.mustafa.messenger.web.assembler.ChatMessagesModelAssembler;
 
 import java.util.List;
+import java.util.Map;
+
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 /**
  * Class MessageController.
@@ -24,20 +33,22 @@ import java.util.List;
  * @version 1.1
  */
 @RestController
-@RequestMapping("/messages")
+@RequestMapping("/api/v1/messages")
 @Tag(name = "Сообщения",
         description = "Управление сообщениями и получение истории переписки")
 public class MessageController {
 
     private final MessageService messageService;
+    private final ChatMessagesModelAssembler chatMessagesAssembler;
 
     /**
      * Constructor for MessageController.
      *
      * @param messageService the message management service
      */
-    public MessageController(MessageService messageService) {
+    public MessageController(MessageService messageService, ChatMessagesModelAssembler chatMessagesAssembler) {
         this.messageService = messageService;
+        this.chatMessagesAssembler = chatMessagesAssembler;
     }
 
     /**
@@ -48,12 +59,17 @@ public class MessageController {
      */
     @Operation(summary = "Отправить новое сообщение")
     @PostMapping("/new-message")
-    public ResponseEntity<?> createMessage(
+    public ResponseEntity<EntityModel<Map<String, Long>>> createMessage(
             @Valid @RequestBody MessageDTO messageDTO) {
 
         long messageId = messageService.createMessage(messageDTO);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body("new message id: " + messageId);
+
+        Map<String, Long> responseBody = Map.of("messageId", messageId);
+        EntityModel<Map<String, Long>> model = EntityModel.of(responseBody);
+
+        model.add(linkTo(methodOn(MessageController.class).getChatMessages(messageDTO.chatId())).withRel("chat-messages"));
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(model);
     }
 
     /**
@@ -65,21 +81,35 @@ public class MessageController {
      */
     @Operation(summary = "Получить сообщения чата")
     @GetMapping("/get/{chatId}")
-    public ResponseEntity<?> getChatMessages(@PathVariable Long chatId) {
+    public ResponseEntity<CollectionModel<EntityModel<ChatMessagesDTO>>> getChatMessages(@PathVariable Long chatId) {
         List<ChatMessagesDTO> sortedChatMessages = messageService
                 .getChatMessages(chatId);
-        return ResponseEntity.status(HttpStatus.OK)
-                .body("Chat messages ascending: " + sortedChatMessages);
+
+        List<EntityModel<ChatMessagesDTO>> assembledMessages = sortedChatMessages.stream()
+                .map(chatMessagesAssembler::toModel)
+                .toList();
+
+        CollectionModel<EntityModel<ChatMessagesDTO>> collectionModel =
+                CollectionModel.of(assembledMessages);
+        // Adding self link
+        collectionModel.add(linkTo(methodOn(MessageController.class)
+                .getChatMessages(chatId)).withSelfRel());
+        return ResponseEntity.ok(collectionModel);
     }
 
-
+    @Operation(summary = "Получить сохраненные сообщения с пагинацией")
     @GetMapping("/get/saved")
-    public ResponseEntity<Page<SavedMessageDTO>> getSavedMessages(
+    public ResponseEntity<PagedModel<EntityModel<SavedMessageDTO>>> getSavedMessages(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            PagedResourcesAssembler<SavedMessageDTO> pagedAssembler) {
 
         Page<SavedMessageDTO> messagesPage = messageService
                 .getSavedMessagesHistory(page, size);
-        return ResponseEntity.ok(messagesPage);
+
+        PagedModel<EntityModel<SavedMessageDTO>> pagedModel
+                = pagedAssembler.toModel(messagesPage);
+
+        return ResponseEntity.ok(pagedModel);
     }
 }

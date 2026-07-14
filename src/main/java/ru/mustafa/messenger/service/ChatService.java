@@ -88,19 +88,23 @@ public class ChatService {
     public List<UserChatsDTO> getUserChats() {
         User user = userService.getCurrentUser();
         List<Chat> userChats = chatRepository.findByUsersId(user.getId());
+
         Map<Chat, LocalDateTime> chatAndLatestMessageMap = new HashMap<>();
-        for (Chat chat: userChats) {
-            Set<Message> messages = chat.getMessages();
-            messages.stream()
+
+        for (Chat chat : userChats) {
+            // Ищем дату последнего сообщения
+            LocalDateTime latestActivity = chat.getMessages().stream()
                     .map(Message::getCreatedAt)
                     .max(Comparator.naturalOrder())
-                    .ifPresent(maxCreatedAt ->
-                            chatAndLatestMessageMap.put(chat, maxCreatedAt));
+                    .orElse(chat.getCreatedAt());
+
+            chatAndLatestMessageMap.put(chat, latestActivity);
         }
 
         return chatAndLatestMessageMap.entrySet().stream()
                 .sorted(Map.Entry.comparingByValue(Collections.reverseOrder()))
                 .map(entry -> new UserChatsDTO(
+                        entry.getKey().getId(),
                         entry.getKey().getName(),
                         entry.getValue()
                 ))

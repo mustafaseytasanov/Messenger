@@ -12,7 +12,7 @@ import ru.mustafa.messenger.service.UserService;
  * @version 1.0
  */
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/api/v1/users")
 @Tag(name = "Пользователи", description = "Управление профилями и данными пользователей")
 public class UserController {
 

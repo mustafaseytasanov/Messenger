@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
  */
 @Schema(description = "Ответ с чатами пользователя")
 public record UserChatsDTO(
+    @Schema(description = "id чата", example = "1")
+    Long id,
     @Schema(description = "Имя чата", example = "chat 1")
     String name,
     @Schema(description = "Время и дата последнего сообщения",

@@ -16,7 +16,7 @@ import ru.mustafa.messenger.service.UserService;
  * @version 1.0
  */
 @RestController
-@RequestMapping("/example")
+@RequestMapping("/api/v1/example")
 @RequiredArgsConstructor
 @Tag(name = "Аутентификация")
 public class ExampleController {
