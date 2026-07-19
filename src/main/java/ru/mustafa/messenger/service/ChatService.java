@@ -1,11 +1,13 @@
 package ru.mustafa.messenger.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.mustafa.messenger.dto.ChatDTO;
 import ru.mustafa.messenger.dto.UserChatsDTO;
+import ru.mustafa.messenger.exception.DuplicateRequestException;
 import ru.mustafa.messenger.exception.ResourceNotFoundException;
 import ru.mustafa.messenger.model.Chat;
 import ru.mustafa.messenger.model.Message;
@@ -15,6 +17,7 @@ import ru.mustafa.messenger.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -30,6 +33,7 @@ public class ChatService {
     private final ChatRepository chatRepository;
     private final UserRepository userRepository;
     private final UserService userService;
+    private final StringRedisTemplate redisTemplate;
 
     /**
      * Creates a new chat room and assigns users to it along with the creator.
@@ -39,31 +43,55 @@ public class ChatService {
      * @throws ResourceNotFoundException if any of the provided user IDs are not found
      */
     @Transactional
-    public long createChat(ChatDTO chatDTO) {
+    public long createChat(String idempotencyKey, ChatDTO chatDTO) {
+        checkAndLockIdempotencyKey(idempotencyKey);
 
-        Chat chat = new Chat();
-        chat.setName(chatDTO.name());
+        try {
+            Chat chat = new Chat();
+            chat.setName(chatDTO.name());
 
-        // Removing duplicates
-        Set<Long> requestedIds = new HashSet<>(chatDTO.users());
-        List<User> foundUsers = userRepository.findAllById(requestedIds);
+            // Removing duplicates
+            Set<Long> requestedIds = new HashSet<>(chatDTO.users());
+            List<User> foundUsers = userRepository.findAllById(requestedIds);
 
-        if (foundUsers.size() != requestedIds.size()) {
-            Set<Long> foundIds = foundUsers.stream()
-                    .map(User::getId)
-                    .collect(Collectors.toSet());
-            requestedIds.removeAll(foundIds);
-            throw new ResourceNotFoundException("Users not found with IDs: "
-                    + requestedIds);
+            if (foundUsers.size() != requestedIds.size()) {
+                Set<Long> foundIds = foundUsers.stream()
+                        .map(User::getId)
+                        .collect(Collectors.toSet());
+                requestedIds.removeAll(foundIds);
+                throw new ResourceNotFoundException("Users not found with IDs: "
+                        + requestedIds);
+            }
+            Set<User> users = new HashSet<>(foundUsers);
+
+            users.add(userService.getCurrentUser());
+            chat.setUsers(users);
+            chat.setCreatedAt(LocalDateTime.now());
+            chat = chatRepository.save(chat);
+
+            // 3. Updating status in Redis
+            redisTemplate.opsForValue().set(idempotencyKey, "SUCCESS", 5,
+                    TimeUnit.MINUTES);
+
+            return chat.getId();
+        } catch (Exception e) {
+            redisTemplate.delete(idempotencyKey);
+            throw e;
         }
-        Set<User> users = new HashSet<>(foundUsers);
-
-        users.add(userService.getCurrentUser());
-        chat.setUsers(users);
-        chat.setCreatedAt(LocalDateTime.now());
-        chat = chatRepository.save(chat);
-        return chat.getId();
     }
+
+
+    private void checkAndLockIdempotencyKey(String key) {
+        // setIfAbsent will succeed (true) only if the key is not yet in Redis
+        Boolean isFirstRequest = redisTemplate.opsForValue()
+                .setIfAbsent(key, "PROCESSING", 5, TimeUnit.MINUTES);
+
+        if (Boolean.FALSE.equals(isFirstRequest)) {
+            throw new DuplicateRequestException(
+                    "This chat has already been created or is being processed.");
+        }
+    }
+
 
     // Creating chat for saved messages
     @Transactional(propagation = Propagation.REQUIRES_NEW)

@@ -49,13 +49,15 @@ public class ChatController {
      * Creates a new chat.
      *
      * @param chatDTO the data container for the new chat
+     * @param idempotencyKey idempotency key of request
      * @return a response entity containing the created chat ID and links
      */
     @Operation(summary = "Создать новый чат")
     @PostMapping("/new-chat")
     public ResponseEntity<EntityModel<Map<String, Long>>> createChat(
+            @RequestHeader("X-Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody ChatDTO chatDTO) {
-        long chatId = chatService.createChat(chatDTO);
+        long chatId = chatService.createChat(idempotencyKey, chatDTO);
 
         // In further, it will be created record with chat id
         Map<String, Long> responseBody = Map.of("chatId", chatId);

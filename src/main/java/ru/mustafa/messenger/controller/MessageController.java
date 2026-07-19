@@ -54,15 +54,18 @@ public class MessageController {
     /**
      * Sends and creates a new message in a chat.
      *
+     * @param idempotencyKey idempotency key of request
      * @param messageDTO the data container for the new message
      * @return a response entity containing the created message ID
      */
     @Operation(summary = "Отправить новое сообщение")
     @PostMapping("/new-message")
     public ResponseEntity<EntityModel<Map<String, Long>>> createMessage(
+            @RequestHeader("X-Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody MessageDTO messageDTO) {
 
-        long messageId = messageService.createMessage(messageDTO);
+        long messageId = messageService.createMessage(idempotencyKey,
+                messageDTO);
 
         Map<String, Long> responseBody = Map.of("messageId", messageId);
         EntityModel<Map<String, Long>> model = EntityModel.of(responseBody);

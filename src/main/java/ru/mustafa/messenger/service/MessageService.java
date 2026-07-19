@@ -6,12 +6,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.mustafa.messenger.dto.ChatMessagesDTO;
 import ru.mustafa.messenger.dto.MessageDTO;
 import ru.mustafa.messenger.dto.SavedMessageDTO;
 import ru.mustafa.messenger.exception.ChatAccessDeniedException;
+import ru.mustafa.messenger.exception.DuplicateRequestException;
 import ru.mustafa.messenger.exception.ResourceNotFoundException;
 import ru.mustafa.messenger.model.Chat;
 import ru.mustafa.messenger.model.Message;
@@ -21,6 +23,7 @@ import ru.mustafa.messenger.repository.MessageRepository;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -36,6 +39,7 @@ public class MessageService {
     private final ChatRepository chatRepository;
     private final UserService userService;
     private final MessageRepository messageRepository;
+    private final StringRedisTemplate redisTemplate;
 
     /**
      * Creates and saves a new message within a specific chat room.
@@ -46,27 +50,50 @@ public class MessageService {
      * @throws ChatAccessDeniedException if user is not a participant of the chat
      */
     @Transactional
-    public long createMessage(MessageDTO messageDTO) {
+    public long createMessage(String idempotencyKey, MessageDTO messageDTO) {
+        checkAndLockIdempotencyKey(idempotencyKey);
 
-        Chat chat = chatRepository.findById(messageDTO.chatId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Chat not found with id: "
-                                + messageDTO.chatId()));
+        try {
+            Chat chat = chatRepository.findById(messageDTO.chatId())
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException("Chat not found with id: "
+                                    + messageDTO.chatId()));
 
-        User currentUser = userService.getCurrentUser();
-        boolean isParticipant = chatRepository.isUserParticipant(chat.getId(),
-                currentUser.getId());
-        if (!isParticipant) {
-            throw new ChatAccessDeniedException("You're not a participant of this chat");
+            User currentUser = userService.getCurrentUser();
+            boolean isParticipant = chatRepository.isUserParticipant(chat.getId(),
+                    currentUser.getId());
+            if (!isParticipant) {
+                throw new ChatAccessDeniedException("You're not a participant of this chat");
+            }
+
+            Message message = new Message();
+            message.setChat(chat);
+            message.setAuthor(currentUser);
+            message.setText(messageDTO.text());
+            message.setCreatedAt(LocalDateTime.now());
+            message = messageRepository.save(message);
+
+            // 3. Updating status in Redis
+            redisTemplate.opsForValue().set(idempotencyKey, "SUCCESS", 5,
+                    TimeUnit.MINUTES);
+
+            return message.getId();
+
+        } catch (Exception e) {
+            redisTemplate.delete(idempotencyKey);
+            throw e;
         }
+    }
 
-        Message message = new Message();
-        message.setChat(chat);
-        message.setAuthor(currentUser);
-        message.setText(messageDTO.text());
-        message.setCreatedAt(LocalDateTime.now());
-        message = messageRepository.save(message);
-        return message.getId();
+    private void checkAndLockIdempotencyKey(String key) {
+        // setIfAbsent will succeed (true) only if the key is not yet in Redis
+        Boolean isFirstRequest = redisTemplate.opsForValue()
+                .setIfAbsent(key, "PROCESSING", 5, TimeUnit.MINUTES);
+
+        if (Boolean.FALSE.equals(isFirstRequest)) {
+            throw new DuplicateRequestException(
+                    "This message has already been sent or is being processed.");
+        }
     }
 
     /**
@@ -75,7 +102,7 @@ public class MessageService {
      * @param chatId the unique identifier of the chat room
      * @return a chronologically sorted list of chat messages converted to data transfer objects
      * @throws ResourceNotFoundException if the chat room does not exist
-     * @throws ChatAccessDeniedException        if the current authenticated user is not a participant of the chat
+     * @throws ChatAccessDeniedException if the current authenticated user is not a participant of the chat
      */
     @Transactional(readOnly = true)
     public List<ChatMessagesDTO> getChatMessages(long chatId) {
