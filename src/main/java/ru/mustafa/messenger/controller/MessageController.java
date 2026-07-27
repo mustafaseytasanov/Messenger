@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.web.PagedResourcesAssembler;
 import org.springframework.hateoas.CollectionModel;
 import org.springframework.hateoas.EntityModel;
+import org.springframework.hateoas.Link;
 import org.springframework.hateoas.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import ru.mustafa.messenger.dto.ChatMessagesDTO;
+import ru.mustafa.messenger.dto.ChatMessagesResponse;
 import ru.mustafa.messenger.dto.MessageDTO;
 import ru.mustafa.messenger.dto.SavedMessageDTO;
 import ru.mustafa.messenger.service.MessageService;
@@ -30,7 +32,7 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
  * Class MessageController.
  *
  * @author Mustafa
- * @version 1.1
+ * @version 1.2
  */
 @RestController
 @RequestMapping("/api/v1/messages")
@@ -70,34 +72,56 @@ public class MessageController {
         Map<String, Long> responseBody = Map.of("messageId", messageId);
         EntityModel<Map<String, Long>> model = EntityModel.of(responseBody);
 
-        model.add(linkTo(methodOn(MessageController.class).getChatMessages(messageDTO.chatId())).withRel("chat-messages"));
+        model.add(linkTo(methodOn(MessageController.class)
+                .getChatMessages(messageDTO.chatId(), null, 20))
+                .withRel("chat-messages"));
 
         return ResponseEntity.status(HttpStatus.CREATED).body(model);
     }
 
     /**
      * Retrieves all messages for a specific chat sorted in ascending
-     * chronological order.
+     * chronological order. Second approach of pagination
      *
      * @param chatId the unique identifier of the chat
+     * @param cursor token in base64 form
+     * @param size size of page
      * @return a response entity containing the list of chat messages
      */
     @Operation(summary = "Получить сообщения чата")
     @GetMapping("/get/{chatId}")
-    public ResponseEntity<CollectionModel<EntityModel<ChatMessagesDTO>>> getChatMessages(@PathVariable Long chatId) {
-        List<ChatMessagesDTO> sortedChatMessages = messageService
-                .getChatMessages(chatId);
+    public ResponseEntity<CollectionModel<EntityModel
+            <ChatMessagesDTO>>> getChatMessages(
+                    @PathVariable Long chatId,
+                    @RequestParam(required = false) String cursor,
+                    @RequestParam(defaultValue = "20") int size) {
+        ChatMessagesResponse response = messageService
+                .getChatMessages(chatId, cursor, size);
 
-        List<EntityModel<ChatMessagesDTO>> assembledMessages = sortedChatMessages.stream()
+        List<EntityModel<ChatMessagesDTO>> assembledMessages = response
+                .messages().stream()
                 .map(chatMessagesAssembler::toModel)
                 .toList();
 
         CollectionModel<EntityModel<ChatMessagesDTO>> collectionModel =
                 CollectionModel.of(assembledMessages);
+
         // Adding self link
         collectionModel.add(linkTo(methodOn(MessageController.class)
-                .getChatMessages(chatId)).withSelfRel());
+                .getChatMessages(chatId, cursor, size))
+                .withSelfRel());
+
+        // Adding "next" link
+        if (response.hasNext() && response.nextCursor() != null) {
+            Link nextLink = linkTo(methodOn(MessageController.class)
+                    .getChatMessages(chatId, response.nextCursor(), size))
+                    .withRel("next");
+
+            collectionModel.add(nextLink);
+        }
+
         return ResponseEntity.ok(collectionModel);
+
     }
 
     @Operation(summary = "Получить сохраненные сообщения с пагинацией")

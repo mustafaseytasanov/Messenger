@@ -2,14 +2,12 @@ package ru.mustafa.messenger.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.mustafa.messenger.dto.ChatMessagesDTO;
+import ru.mustafa.messenger.dto.ChatMessagesResponse;
 import ru.mustafa.messenger.dto.MessageDTO;
 import ru.mustafa.messenger.dto.SavedMessageDTO;
 import ru.mustafa.messenger.exception.ChatAccessDeniedException;
@@ -21,6 +19,7 @@ import ru.mustafa.messenger.model.User;
 import ru.mustafa.messenger.repository.ChatRepository;
 import ru.mustafa.messenger.repository.MessageRepository;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +29,7 @@ import java.util.stream.Collectors;
  * Service responsible for creating new chat messages and retrieving message history.
  *
  * @author Mustafa
- * @version 1.1
+ * @version 1.2
  */
 @Service
 @RequiredArgsConstructor
@@ -98,6 +97,7 @@ public class MessageService {
 
     /**
      * Retrieves all messages belonging to a chat, ordered from earliest to latest.
+     * Second approach of pagination.
      *
      * @param chatId the unique identifier of the chat room
      * @return a chronologically sorted list of chat messages converted to data transfer objects
@@ -105,7 +105,8 @@ public class MessageService {
      * @throws ChatAccessDeniedException if the current authenticated user is not a participant of the chat
      */
     @Transactional(readOnly = true)
-    public List<ChatMessagesDTO> getChatMessages(long chatId) {
+    public ChatMessagesResponse getChatMessages(
+            long chatId, String cursorToken, int size) {
         Chat chat = chatRepository.findById(chatId)
                 .orElseThrow(() -> new ResourceNotFoundException
                         ("Chat not found with id: " + chatId));
@@ -117,15 +118,65 @@ public class MessageService {
             throw new ChatAccessDeniedException("You're not a participant of this chat");
         }
 
-        List<Message> chatMessages = messageRepository
-                .findByChatIdOrderByCreatedAtAsc(chatId);
-        return chatMessages.stream()
+        Sort sort = Sort.by(Sort.Direction.ASC, "createdAt")
+                .and(Sort.by(Sort.Direction.ASC, "id"));
+
+        // First page
+        ScrollPosition position = ScrollPosition.keyset();
+
+        if (cursorToken != null && !cursorToken.isBlank()) {
+            try {
+                String decoded = new String(
+                        Base64.getDecoder().decode(cursorToken),
+                        StandardCharsets.UTF_8);
+
+                int lastColonIndex = decoded.lastIndexOf(":");
+                String createdAtStr = decoded.substring(0, lastColonIndex);
+                String idStr = decoded.substring(lastColonIndex + 1);
+
+                LocalDateTime createdAt = LocalDateTime.parse(createdAtStr);
+                Long id = Long.parseLong(idStr);
+
+                Map<String, Object> keys = new LinkedHashMap<>();
+                keys.put("createdAt", createdAt);
+                keys.put("id", id);
+
+                position = ScrollPosition.forward(keys);
+            } catch (Exception e) {
+                position = ScrollPosition.keyset();
+            }
+        }
+
+        Window<Message> messageWindow = messageRepository
+                .findByChatId(chatId, position, sort, Limit.of(size));
+
+        List<ChatMessagesDTO> dtoList = messageWindow.getContent().stream()
                 .map(msg -> new ChatMessagesDTO(
                         msg.getAuthor().getUsername(),
                         msg.getText(),
                         msg.getCreatedAt()
                 ))
-                .collect(Collectors.toList());
+                .toList();
+
+        // Coding token for a next page
+        String nextCursorToken = null;
+        if (!messageWindow.isEmpty() && messageWindow.hasNext()) {
+            ScrollPosition nextPosition = messageWindow
+                    .positionAt(messageWindow.size() - 1);
+
+            if (nextPosition instanceof KeysetScrollPosition keyset) {
+                String createdAtVal = keyset.getKeys().get("createdAt").toString();
+                String idVal = keyset.getKeys().get("id").toString();
+
+                String rawToken = createdAtVal + ":" + idVal;
+
+                nextCursorToken = Base64.getEncoder().encodeToString(
+                        rawToken.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        return new ChatMessagesResponse(dtoList, nextCursorToken, messageWindow.hasNext());
+
     }
 
     // First approach of pagination.
@@ -142,7 +193,6 @@ public class MessageService {
         Pageable pageable = PageRequest.of(page, size,
                 Sort.by("createdAt").descending());
 
-        // 4. Запрашиваем страницу сообщений и маппим в DTO
         return messageRepository.findByChatId(savedChat.getId(), pageable)
                 .map(msg -> new SavedMessageDTO(
                         msg.getText(),

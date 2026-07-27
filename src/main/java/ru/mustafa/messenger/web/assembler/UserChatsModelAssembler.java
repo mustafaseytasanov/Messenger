@@ -27,7 +27,7 @@ public class UserChatsModelAssembler extends RepresentationModelAssemblerSupport
 
         entityModel.add(WebMvcLinkBuilder.linkTo(
                         WebMvcLinkBuilder.methodOn(MessageController.class)
-                                .getChatMessages(dto.id()))
+                                .getChatMessages(dto.id(), null, 20))
                 .withRel("messages"));
 
         return entityModel;
