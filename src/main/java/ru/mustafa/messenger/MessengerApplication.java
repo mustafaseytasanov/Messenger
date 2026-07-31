@@ -2,6 +2,7 @@ package ru.mustafa.messenger;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
  * Main entry point class for the Messenger application.

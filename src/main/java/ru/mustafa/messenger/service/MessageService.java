@@ -39,6 +39,7 @@ public class MessageService {
     private final UserService userService;
     private final MessageRepository messageRepository;
     private final StringRedisTemplate redisTemplate;
+    private final NotificationService notificationService;
 
     /**
      * Creates and saves a new message within a specific chat room.
@@ -72,7 +73,16 @@ public class MessageService {
             message.setCreatedAt(LocalDateTime.now());
             message = messageRepository.save(message);
 
-            // 3. Updating status in Redis
+            // Sending notification
+            Set<User> users = chat.getUsers();
+            users.remove(currentUser);
+            for (User user : users) {
+                notificationService.sendNotificationToUser(
+                        currentUser.getUsername(), user.getId(),
+                        message.getText());
+            }
+
+            // Updating status in Redis
             redisTemplate.opsForValue().set(idempotencyKey, "SUCCESS", 5,
                     TimeUnit.MINUTES);
 
