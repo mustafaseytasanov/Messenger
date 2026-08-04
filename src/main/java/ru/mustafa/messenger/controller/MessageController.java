@@ -13,13 +13,12 @@ import org.springframework.hateoas.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
-import ru.mustafa.messenger.dto.ChatMessagesDTO;
-import ru.mustafa.messenger.dto.ChatMessagesResponse;
-import ru.mustafa.messenger.dto.MessageDTO;
-import ru.mustafa.messenger.dto.SavedMessageDTO;
+import ru.mustafa.messenger.dto.*;
 import ru.mustafa.messenger.service.MessageService;
+import ru.mustafa.messenger.service.UserService;
 import ru.mustafa.messenger.web.assembler.ChatMessagesModelAssembler;
 
 import java.util.List;
@@ -41,6 +40,7 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 public class MessageController {
 
     private final MessageService messageService;
+    private final UserService userService;
     private final ChatMessagesModelAssembler chatMessagesAssembler;
 
     /**
@@ -48,8 +48,9 @@ public class MessageController {
      *
      * @param messageService the message management service
      */
-    public MessageController(MessageService messageService, ChatMessagesModelAssembler chatMessagesAssembler) {
+    public MessageController(MessageService messageService, UserService userService, ChatMessagesModelAssembler chatMessagesAssembler) {
         this.messageService = messageService;
+        this.userService = userService;
         this.chatMessagesAssembler = chatMessagesAssembler;
     }
 
@@ -77,6 +78,21 @@ public class MessageController {
                 .withRel("chat-messages"));
 
         return ResponseEntity.status(HttpStatus.CREATED).body(model);
+    }
+
+    @Operation(summary = "Отправить новое сообщение в Избранное")
+    @PostMapping("/new-saved-message")
+    public ResponseEntity<Map<String, Long>> createSavedMessage(
+            @RequestHeader("X-Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody RequestSavedMessageDTO requestSavedMessageDTO) {
+
+        Long userId = userService.getCurrentUser().getId();
+
+        long messageId = messageService.createSavedMessage(idempotencyKey,
+                requestSavedMessageDTO, userId);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(Map.of("messageId", messageId));
     }
 
     /**
@@ -131,8 +147,10 @@ public class MessageController {
             @RequestParam(defaultValue = "20") int size,
             PagedResourcesAssembler<SavedMessageDTO> pagedAssembler) {
 
+        Long userId = userService.getCurrentUser().getId();
+
         Page<SavedMessageDTO> messagesPage = messageService
-                .getSavedMessagesHistory(page, size);
+                .getSavedMessagesHistory(userId, page, size);
 
         PagedModel<EntityModel<SavedMessageDTO>> pagedModel
                 = pagedAssembler.toModel(messagesPage);

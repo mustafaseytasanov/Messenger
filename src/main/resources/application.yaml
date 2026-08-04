@@ -1,14 +1,21 @@
 server:
   port: 9000
 
+
+
+
 spring:
   application:
     name: messenger
 
+  cache:
+    type: redis
+
   data:
     redis:
-      host=localhost
-      port=6379
+      host: localhost
+      port: 6379
+      cache.time-to-live: 600000
 
   datasource:
     url: jdbc:postgresql://localhost:5432/postgres

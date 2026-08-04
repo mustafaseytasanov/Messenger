@@ -1,15 +1,13 @@
 package ru.mustafa.messenger.service;
 
-import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.mustafa.messenger.dto.ChatMessagesDTO;
-import ru.mustafa.messenger.dto.ChatMessagesResponse;
-import ru.mustafa.messenger.dto.MessageDTO;
-import ru.mustafa.messenger.dto.SavedMessageDTO;
+import ru.mustafa.messenger.dto.*;
 import ru.mustafa.messenger.exception.ChatAccessDeniedException;
 import ru.mustafa.messenger.exception.DuplicateRequestException;
 import ru.mustafa.messenger.exception.ResourceNotFoundException;
@@ -23,7 +21,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * Service responsible for creating new chat messages and retrieving message history.
@@ -81,6 +78,43 @@ public class MessageService {
                         currentUser.getUsername(), user.getId(),
                         message.getText());
             }
+
+            // Updating status in Redis
+            redisTemplate.opsForValue().set(idempotencyKey, "SUCCESS", 5,
+                    TimeUnit.MINUTES);
+
+            return message.getId();
+
+        } catch (Exception e) {
+            redisTemplate.delete(idempotencyKey);
+            throw e;
+        }
+    }
+
+    // Creating saved message
+    @CacheEvict(value = "saved_messages", key = "#userId")
+    @Transactional
+    public long createSavedMessage(
+            String idempotencyKey,
+            RequestSavedMessageDTO requestSavedMessageDTO,
+            Long userId) {
+
+        checkAndLockIdempotencyKey(idempotencyKey);
+
+        try {
+            User currentUser = userService.getCurrentUser();
+            String name = "saved_" + currentUser.getUsername();
+            Chat chat = chatRepository.findByName(name)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException("Saved Chat not found for user: "
+                                    + currentUser.getUsername()));
+
+            Message message = new Message();
+            message.setChat(chat);
+            message.setAuthor(currentUser);
+            message.setText(requestSavedMessageDTO.text());
+            message.setCreatedAt(LocalDateTime.now());
+            message = messageRepository.save(message);
 
             // Updating status in Redis
             redisTemplate.opsForValue().set(idempotencyKey, "SUCCESS", 5,
@@ -190,7 +224,9 @@ public class MessageService {
     }
 
     // First approach of pagination.
-    public Page<SavedMessageDTO> getSavedMessagesHistory(int page, int size) {
+    @Cacheable(value = "saved_messages", key = "#userId")
+    public Page<SavedMessageDTO> getSavedMessagesHistory(
+            Long userId, int page, int size) {
 
         String username = userService.getCurrentUser().getUsername();
         String chatName = "saved_" + username;
