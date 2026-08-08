@@ -4,6 +4,7 @@ package ru.mustafa.messenger.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.web.PagedResourcesAssembler;
 import org.springframework.hateoas.CollectionModel;
@@ -12,15 +13,14 @@ import org.springframework.hateoas.Link;
 import org.springframework.hateoas.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import ru.mustafa.messenger.dto.*;
 import ru.mustafa.messenger.service.MessageService;
+import ru.mustafa.messenger.service.RateLimiterService;
 import ru.mustafa.messenger.service.UserService;
 import ru.mustafa.messenger.web.assembler.ChatMessagesModelAssembler;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -42,16 +42,18 @@ public class MessageController {
     private final MessageService messageService;
     private final UserService userService;
     private final ChatMessagesModelAssembler chatMessagesAssembler;
+    private final RateLimiterService rateLimiterService;
 
     /**
      * Constructor for MessageController.
      *
      * @param messageService the message management service
      */
-    public MessageController(MessageService messageService, UserService userService, ChatMessagesModelAssembler chatMessagesAssembler) {
+    public MessageController(MessageService messageService, UserService userService, ChatMessagesModelAssembler chatMessagesAssembler, RateLimiterService rateLimiterService) {
         this.messageService = messageService;
         this.userService = userService;
         this.chatMessagesAssembler = chatMessagesAssembler;
+        this.rateLimiterService = rateLimiterService;
     }
 
     /**
@@ -66,6 +68,20 @@ public class MessageController {
     public ResponseEntity<EntityModel<Map<String, Long>>> createMessage(
             @RequestHeader("X-Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody MessageDTO messageDTO) {
+
+        // Limit: maximum 5 requests per second for this userId
+        boolean allowed = rateLimiterService.isAllowed("create_message",
+                userService.getCurrentUser().getId(),
+                5,
+                Duration.ofSeconds(1));
+
+        if (!allowed) {
+            Map<String, Long> errorDetails = Map.of("retry_after_seconds", 1L);
+            return ResponseEntity
+                    .status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(EntityModel.of(errorDetails));
+        }
+
 
         long messageId = messageService.createMessage(idempotencyKey,
                 messageDTO);

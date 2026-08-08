@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.mustafa.messenger.model.Message;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -25,5 +26,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     // Pagination for "Saved" messages
     Page<Message> findByChatId(Long chatId, Pageable pageable);
+
+    long countByCreatedAtAfter(LocalDateTime startOfDay);
 
 }

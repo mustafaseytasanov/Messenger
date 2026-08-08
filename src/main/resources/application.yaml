@@ -2,11 +2,22 @@ server:
   port: 9000
 
 
-
+bucket4j:
+  enabled: true
+  cache-to-use: jcache
+  methods:
+    - name: messaging-plan
+      cache-name: msg-cache
+      rate-limit:
+        - capacity: 5
+          time: 1
+          unit: seconds
 
 spring:
   application:
     name: messenger
+
+
 
   cache:
     type: redis
